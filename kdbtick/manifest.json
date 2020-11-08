@@ -1,0 +1,12 @@
+{
+    "domain": "kdbtick",
+    "name": "Kx kdb+ Tick",
+    "documentation": "https://code.kx.com/q/kb/kdb-tick/",
+    "requirements": [
+      "qpython>=2.0.0",
+      "numpy>=1.8.0"
+    ],
+    "codeowners": [
+      "@peteclarkez"
+    ]
+  }

@@ -1,0 +1,7 @@
+*.log
+.DS_Store
+*.env
+*.zip
+.DS_Store
+.vscode
+*.test
