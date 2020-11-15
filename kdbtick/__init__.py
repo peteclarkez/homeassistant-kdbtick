@@ -38,7 +38,6 @@ CONFIG_SCHEMA = vol.Schema(
                 vol.Optional(CONF_NAME, default=DEFAULT_NAME): cv.string,
                 vol.Optional(CONF_FUNC, default=DEFAULT_FUNC): cv.string,
                 vol.Optional(CONF_FILTER, default={}): FILTER_SCHEMA,
-
             }
         )
     },
@@ -99,7 +98,8 @@ async def async_setup(hass, config):
             "entity_id": "kdb.connect",
             "meta": "kdb+ integration has started",
             "attributes": dict(brand="Ford", model="Mustang", year=1964),
-            "value": 0.0,
+            "value": -1.1,
+            "svalue": " ",
         },
     }
 
@@ -111,9 +111,7 @@ async def async_setup(hass, config):
             )
             return
     try:
-        q.sendAsync(
-            updf, numpy.string_(name), json.dumps(payload, cls=JSONEncoder)
-        )
+        q.sendAsync(updf, numpy.string_(name), json.dumps(payload, cls=JSONEncoder))
 
     except QException as err:
         _LOGGER.error(err)
@@ -128,9 +126,14 @@ async def async_setup(hass, config):
             return
 
         try:
-            _state = state_helper.state_as_number(state)
+            _nstate = state_helper.state_as_number(state)
         except ValueError:
-            _state = state.state
+            _nstate = -1.1
+
+        try:
+            _sstate = str(state.state)
+        except ValueError:
+            _sstate = "unknown"
 
         payload = {
             "time": event.time_fired.timestamp(),
@@ -139,7 +142,8 @@ async def async_setup(hass, config):
                 "domain": state.domain,
                 "entity_id": state.object_id,
                 "attributes": dict(state.attributes),
-                "value": _state,
+                "value": _nstate,
+                "svalue": _sstate,
             },
         }
 
@@ -152,9 +156,7 @@ async def async_setup(hass, config):
                 return
 
         try:
-            q.sendAsync(
-                updf, numpy.string_(name), json.dumps(payload, cls=JSONEncoder)
-            )
+            q.sendAsync(updf, numpy.string_(name), json.dumps(payload, cls=JSONEncoder))
         except QException as err:
             _LOGGER.error(err)
         except ConnectionError as err:
