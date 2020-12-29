@@ -12,7 +12,7 @@ from qpython.qtype import QException
 import voluptuous as vol
 
 from homeassistant.const import CONF_HOST, CONF_NAME, CONF_PORT, EVENT_STATE_CHANGED
-from homeassistant.helpers import state as state_helper
+from homeassistant.helpers import event as event_helper, state as state_helper
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers.entityfilter import FILTER_SCHEMA
@@ -28,6 +28,9 @@ DEFAULT_HOST = "localhost"
 DEFAULT_PORT = 2001
 DEFAULT_NAME = "hass_event"
 DEFAULT_FUNC = ".u.updjson"
+
+RETRY_INTERVAL = 60  # seconds
+RETRY_MESSAGE = f"%s Retrying in {RETRY_INTERVAL} seconds."
 
 CONFIG_SCHEMA = vol.Schema(
     {
@@ -46,6 +49,10 @@ CONFIG_SCHEMA = vol.Schema(
 
 
 async def async_setup(hass, config):
+    return dosetup(hass, config)
+
+
+def dosetup(hass, config):
     """Set up the kdb+ component."""
     conf = config[DOMAIN]
     host = conf.get(CONF_HOST)
@@ -76,6 +83,7 @@ async def async_setup(hass, config):
             _LOGGER.error(err)
             return False
         except ConnectionError as err:
+            # _LOGGER.exception(RETRY_MESSAGE, err)
             _LOGGER.error(err)
             return False
         return True
@@ -84,6 +92,23 @@ async def async_setup(hass, config):
     q = qconnection.QConnection(host=host, port=port)
     # initialize connection
     reconnect(q)
+
+    if not connTest(q):
+        if not reconnect(q):
+            # _LOGGER.warn(
+            #     "Error Initialising Connection, IPC version: %s. Is connected: %s"
+            #     % (q.protocol_version, q.is_connected())
+            # )
+            _LOGGER.error(
+                RETRY_MESSAGE,
+            )
+            event_helper.async_call_later(
+                hass, RETRY_INTERVAL, lambda _: dosetup(hass, config)
+            )
+            # event_helper.async_call_later(
+            #     hass, RETRY_INTERVAL, lambda _: async_setup(hass, config)
+            # )
+            return True
 
     _LOGGER.info(q)
     _LOGGER.info(
@@ -103,20 +128,14 @@ async def async_setup(hass, config):
         },
     }
 
-    if not connTest(q):
-        if not reconnect(q):
-            _LOGGER.warn(
-                "Error reconnecting, IPC version: %s. Is connected: %s"
-                % (q.protocol_version, q.is_connected())
-            )
-            return
     try:
         q.sendAsync(updf, numpy.string_(name), json.dumps(payload, cls=JSONEncoder))
-
     except QException as err:
         _LOGGER.error(err)
     except ConnectionError as err:
         _LOGGER.error(err)
+
+    return True
 
     async def kdbtick_event_listener(event):
         """Listen for new messages on the bus and sends them to kdb+."""
