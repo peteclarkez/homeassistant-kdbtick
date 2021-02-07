@@ -11,7 +11,14 @@ from qpython.qtype import QException
 
 import voluptuous as vol
 
-from homeassistant.const import CONF_HOST, CONF_NAME, CONF_PORT, EVENT_STATE_CHANGED
+from homeassistant.const import (
+    CONF_HOST,
+    CONF_NAME,
+    CONF_PORT,
+    EVENT_STATE_CHANGED,
+    EVENT_HOMEASSISTANT_STOP,
+    EVENT_LOGBOOK_ENTRY,
+)
 from homeassistant.helpers import event as event_helper, state as state_helper
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 import homeassistant.helpers.config_validation as cv
@@ -53,6 +60,8 @@ async def async_setup(hass, config):
 
 
 def dosetup(hass, config):
+    _LOGGER.info("Starting kdbtick setup")
+
     """Set up the kdb+ component."""
     conf = config[DOMAIN]
     host = conf.get(CONF_HOST)
@@ -122,7 +131,9 @@ def dosetup(hass, config):
             "domain": DOMAIN,
             "entity_id": "kdb.connect",
             "meta": "kdb+ integration has started",
-            "attributes": dict(brand="Ford", model="Mustang", year=1964),
+            "attributes": dict(
+                dkbtick="Ford", model="Mustang", testedAgainst="2012.01.4"
+            ),
             "value": -1.1,
             "svalue": " ",
         },
@@ -135,7 +146,22 @@ def dosetup(hass, config):
     except ConnectionError as err:
         _LOGGER.error(err)
 
-    return True
+    def publishPayload(payload):
+
+        if not connTest(q):
+            if not reconnect(q):
+                _LOGGER.warn(
+                    "Error reconnecting, IPC version: %s. Is connected: %s"
+                    % (q.protocol_version, q.is_connected())
+                )
+                return
+
+        try:
+            q.sendAsync(updf, numpy.string_(name), json.dumps(payload, cls=JSONEncoder))
+        except QException as err:
+            _LOGGER.error(err)
+        except ConnectionError as err:
+            _LOGGER.error(err)
 
     async def kdbtick_event_listener(event):
         """Listen for new messages on the bus and sends them to kdb+."""
@@ -166,21 +192,46 @@ def dosetup(hass, config):
             },
         }
 
-        if not connTest(q):
-            if not reconnect(q):
-                _LOGGER.warn(
-                    "Error reconnecting, IPC version: %s. Is connected: %s"
-                    % (q.protocol_version, q.is_connected())
-                )
-                return
+        publishPayload(payload)
 
-        try:
-            q.sendAsync(updf, numpy.string_(name), json.dumps(payload, cls=JSONEncoder))
-        except QException as err:
-            _LOGGER.error(err)
-        except ConnectionError as err:
-            _LOGGER.error(err)
+    def shutdown(event):
+        """Shut down the thread."""
+        _LOGGER.info("kdbtick, Shutdown Message")
 
+        # instance.queue.put(None)
+        # instance.join()
+        # influx.close()
+
+    def logbook_entry_listener(event):
+        """Listen for logbook entries and send them as events."""
+        name = event.data.get("name")
+        message = event.data.get("message")
+
+        attributes: dict(
+            title="Home Assistant Event",
+            text=f"%%% \n **{name}** {message} \n %%%",
+            entity=event.data.get("entity_id"),
+            domain=event.data.get("domain"),
+        )
+
+        payload = {
+            "time": time.time(),
+            "host": name,
+            "event": {
+                "domain": "event",
+                "entity_id": event.data.get("entity_id"),
+                "attributes": attributes,
+                "value": -1.1,
+                "svalue": " ",
+            },
+        }
+
+        publishPayload(payload)
+
+        _LOGGER.info("Sent event %s", event.data.get("entity_id"))
+
+    hass.bus.async_listen(EVENT_LOGBOOK_ENTRY, logbook_entry_listener)
     hass.bus.async_listen(EVENT_STATE_CHANGED, kdbtick_event_listener)
+    hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, shutdown)
 
     return True

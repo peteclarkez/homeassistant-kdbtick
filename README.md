@@ -20,7 +20,6 @@ into
 
 ```
 
-
 ## Issues with hassio
 
 The requirements in the manifest include `qpython>=2.0.0`. When starting the integration on hassio installation on raspberrypi3B, this fails as it needs `gcc` in order to build the optomized compression code. As `gcc` isn't installed by default this will require it's insalled via `apk`. The way I got this working was to use the ssh+web integration.
@@ -35,7 +34,6 @@ Once it's setup and you can connect, disable the protected mode. THis will allow
 
 > TODO find out how to either disable the need for this in the qpython build or else find out how to install `gcc`.
 > This might require a custom build of qpython to be deployed or linked via github.
-
 
 **Example configuration.yaml:**
 
