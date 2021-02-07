@@ -28,9 +28,12 @@ Once it's setup and you can connect, disable the protected mode. THis will allow
 
 - Run `docker ps` to get the running containers.
 - find the `homeassistant` container and connect to it via `docker exec -it <conainterid> /bin/bash`
-- once in the container install gcc via `apk install build-base`
+  - `docker exec -it $(docker ps | grep raspberrypi3-homeassistant | awk '{print $1}') /bin/bash`
+- once in the container install gcc via `apk add build-base`
 - You can then manually install qpython `pip install qpython`
+  - `apk add build-base && pip install qpython`
 - Once this is done reboot *the host* via the supervisor tab.
+  - THere was an issue where kdb wasn't ready when the system came back and homeassistant would need restarted after.
 
 > TODO find out how to either disable the need for this in the qpython build or else find out how to install `gcc`.
 > This might require a custom build of qpython to be deployed or linked via github.
@@ -47,5 +50,5 @@ kdbtick:
 
 ## Q Source Code
 
-Q Code has been added here to be added to the tick installation.
-It is only intended to be here temporarily until the tick docker image is created.
+The equivalent kdb code is in this repo
+ - https://github.com/peteclarkez/hassio-kdb
