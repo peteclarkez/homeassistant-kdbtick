@@ -1,16 +1,12 @@
-"""Support to send data to a kdb+ tick instance."""
-import asyncio
+"""Support to send data to a KDB-X tick instance."""
+
 import json
 import logging
 import time
 
-import numpy
+from .kx.c import c as kdb
 
-from qpython import qconnection
-from qpython.qtype import QException
-
-import voluptuous as vol
-
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     CONF_HOST,
     CONF_NAME,
@@ -19,153 +15,144 @@ from homeassistant.const import (
     EVENT_HOMEASSISTANT_STOP,
     EVENT_LOGBOOK_ENTRY,
 )
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers import event as event_helper, state as state_helper
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
-import homeassistant.helpers.config_validation as cv
-from homeassistant.helpers.entityfilter import FILTER_SCHEMA
 from homeassistant.helpers.json import JSONEncoder
 
 _LOGGER = logging.getLogger(__name__)
 
 DOMAIN = "kdbtick"
-CONF_FILTER = "filter"
 CONF_FUNC = "updF"
+CONF_INCLUDE_ENTITIES = "include_entities"
+CONF_EXCLUDE_ENTITIES = "exclude_entities"
 
 DEFAULT_HOST = "localhost"
-DEFAULT_PORT = 2001
+DEFAULT_PORT = 5010
 DEFAULT_NAME = "hass_event"
 DEFAULT_FUNC = ".u.updjson"
 
 RETRY_INTERVAL = 60  # seconds
-RETRY_MESSAGE = f"%s Retrying in {RETRY_INTERVAL} seconds."
-
-CONFIG_SCHEMA = vol.Schema(
-    {
-        DOMAIN: vol.Schema(
-            {
-                vol.Optional(CONF_HOST, default=DEFAULT_HOST): cv.string,
-                vol.Optional(CONF_PORT, default=DEFAULT_PORT): cv.port,
-                vol.Optional(CONF_NAME, default=DEFAULT_NAME): cv.string,
-                vol.Optional(CONF_FUNC, default=DEFAULT_FUNC): cv.string,
-                vol.Optional(CONF_FILTER, default={}): FILTER_SCHEMA,
-            }
-        )
-    },
-    extra=vol.ALLOW_EXTRA,
-)
 
 
-async def async_setup(hass, config):
-    return dosetup(hass, config)
+class KdbConnection:
+    """Manage connection to KDB-X tickerplant."""
 
+    def __init__(self, host: str, port: int):
+        """Initialize the connection manager."""
+        self.host = host
+        self.port = port
+        self._conn = None
 
-def dosetup(hass, config):
-    _LOGGER.info("Starting kdbtick setup")
-
-    """Set up the kdb+ component."""
-    conf = config[DOMAIN]
-    host = conf.get(CONF_HOST)
-    port = conf.get(CONF_PORT)
-    name = conf.get(CONF_NAME)
-    updf = conf.get(CONF_FUNC)
-    entity_filter = conf[CONF_FILTER]
-
-    def connTest(qconn):
-        if not qconn.is_connected():
+    def is_connected(self) -> bool:
+        """Check if connection is active."""
+        if self._conn is None:
             return False
         try:
-            q.sendSync(" ")
-        except QException as err:
-            _LOGGER.error(err)
-            return False
-        except ConnectionError as err:
-            # _LOGGER.error(err)
-            return False
-        return True
-
-    def reconnect(qconn):
-        try:
-            if qconn.is_connected():
-                qconn.close()
-            qconn.open()
-        except QException as err:
-            _LOGGER.error(err)
-            return False
-        except ConnectionError as err:
-            # _LOGGER.exception(RETRY_MESSAGE, err)
-            _LOGGER.error(err)
-            return False
-        return True
-
-    # create connection object
-    q = qconnection.QConnection(host=host, port=port)
-    # initialize connection
-    reconnect(q)
-
-    if not connTest(q):
-        if not reconnect(q):
-            # _LOGGER.warn(
-            #     "Error Initialising Connection, IPC version: %s. Is connected: %s"
-            #     % (q.protocol_version, q.is_connected())
-            # )
-            _LOGGER.error(
-                RETRY_MESSAGE,
-            )
-            event_helper.async_call_later(
-                hass, RETRY_INTERVAL, lambda _: dosetup(hass, config)
-            )
-            # event_helper.async_call_later(
-            #     hass, RETRY_INTERVAL, lambda _: async_setup(hass, config)
-            # )
+            self._conn.k("1+1")
             return True
+        except Exception:
+            return False
 
-    _LOGGER.info(q)
-    _LOGGER.info(
-        "IPC version: %s. Is connected: %s" % (q.protocol_version, q.is_connected())
-    )
+    def connect(self) -> bool:
+        """Establish connection to KDB-X."""
+        try:
+            if self._conn is not None:
+                self.close()
+            self._conn = kdb(self.host, self.port)
+            _LOGGER.info("Connected to KDB-X at %s:%d", self.host, self.port)
+            return True
+        except Exception as err:
+            _LOGGER.error("Failed to connect to KDB-X: %s", err)
+            self._conn = None
+            return False
 
-    payload = {
+    def close(self):
+        """Close the connection."""
+        if self._conn is not None:
+            try:
+                self._conn.close()
+            except Exception:
+                pass
+            self._conn = None
+
+    def send(self, func: str, table_name: str, payload: str) -> bool:
+        """Send data to KDB-X using the specified function."""
+        if not self.is_connected():
+            if not self.connect():
+                return False
+
+        try:
+            # table_name as str → symbol (-11), payload wrapped as CharVector → char vector (10)
+            self._conn.k(func, table_name, kdb.CharVector(payload))
+            return True
+        except Exception as err:
+            _LOGGER.error("Failed to send to KDB-X: %s", err)
+            self._conn = None
+            return False
+
+
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Set up KDB-X Tick from a config entry."""
+    _LOGGER.info("Starting KDB-X Tick setup")
+
+    host = entry.data.get(CONF_HOST, DEFAULT_HOST)
+    port = entry.data.get(CONF_PORT, DEFAULT_PORT)
+    name = entry.data.get(CONF_NAME, DEFAULT_NAME)
+    updf = entry.data.get(CONF_FUNC, DEFAULT_FUNC)
+
+    # Build entity filter from options
+    include = set(entry.options.get(CONF_INCLUDE_ENTITIES, []))
+    exclude = set(entry.options.get(CONF_EXCLUDE_ENTITIES, []))
+
+    def entity_filter(entity_id: str) -> bool:
+        """Filter entities based on include/exclude lists."""
+        if include:
+            return entity_id in include
+        if exclude:
+            return entity_id not in exclude
+        return True
+
+    conn = KdbConnection(host, port)
+
+    if not await hass.async_add_executor_job(conn.connect):
+        _LOGGER.error("Initial connection failed. Retrying in %d seconds.", RETRY_INTERVAL)
+
+        async def retry_setup(_now):
+            """Retry setup after delay."""
+            await async_setup_entry(hass, entry)
+
+        event_helper.async_call_later(hass, RETRY_INTERVAL, retry_setup)
+        return True
+
+    _LOGGER.info("KDB-X connection established to %s:%d", host, port)
+
+    # Send startup event
+    startup_payload = {
         "time": time.time(),
         "host": name,
         "event": {
             "domain": DOMAIN,
             "entity_id": "kdb.connect",
-            "meta": "kdb+ integration has started",
-            "attributes": dict(
-                dkbtick="Ford", model="Mustang", testedAgainst="2012.01.4"
-            ),
+            "attributes": {
+                "integration": "kdbtick",
+                "version": "2.0.0",
+                "using": "kx",
+            },
             "value": -1.1,
-            "svalue": " ",
+            "svalue": "connected",
         },
     }
+    await hass.async_add_executor_job(
+        conn.send, updf, name, json.dumps(startup_payload, cls=JSONEncoder)
+    )
 
-    try:
-        q.sendAsync(updf, numpy.string_(name), json.dumps(payload, cls=JSONEncoder))
-    except QException as err:
-        _LOGGER.error(err)
-    except ConnectionError as err:
-        _LOGGER.error(err)
-
-    def publishPayload(payload):
-
-        if not connTest(q):
-            if not reconnect(q):
-                _LOGGER.warn(
-                    "Error reconnecting, IPC version: %s. Is connected: %s"
-                    % (q.protocol_version, q.is_connected())
-                )
-                return
-
-        try:
-            q.sendAsync(updf, numpy.string_(name), json.dumps(payload, cls=JSONEncoder))
-        except QException as err:
-            _LOGGER.error(err)
-        except ConnectionError as err:
-            _LOGGER.error(err)
+    def publish_payload(payload):
+        """Publish a payload to KDB-X."""
+        if not conn.send(updf, name, json.dumps(payload, cls=JSONEncoder)):
+            _LOGGER.warning("Failed to publish to KDB-X at %s:%d", host, port)
 
     async def kdbtick_event_listener(event):
-        """Listen for new messages on the bus and sends them to kdb+."""
-
+        """Listen for new messages on the bus and send them to KDB-X."""
         state = event.data.get("new_state")
         if state is None or not entity_filter(state.entity_id):
             return
@@ -192,27 +179,19 @@ def dosetup(hass, config):
             },
         }
 
-        publishPayload(payload)
+        await hass.async_add_executor_job(publish_payload, payload)
 
-    def shutdown(event):
-        """Shut down the thread."""
-        _LOGGER.info("kdbtick, Shutdown Message")
-
-        # instance.queue.put(None)
-        # instance.join()
-        # influx.close()
-
-    def logbook_entry_listener(event):
+    async def logbook_entry_listener(event):
         """Listen for logbook entries and send them as events."""
-        name = event.data.get("name")
+        entry_name = event.data.get("name")
         message = event.data.get("message")
 
-        attributes: dict(
-            title="Home Assistant Event",
-            text=f"%%% \n **{name}** {message} \n %%%",
-            entity=event.data.get("entity_id"),
-            domain=event.data.get("domain"),
-        )
+        attributes = {
+            "title": "Home Assistant Event",
+            "text": f"%%% \n **{entry_name}** {message} \n %%%",
+            "entity": event.data.get("entity_id"),
+            "domain": event.data.get("domain"),
+        }
 
         payload = {
             "time": time.time(),
@@ -226,12 +205,44 @@ def dosetup(hass, config):
             },
         }
 
-        publishPayload(payload)
+        await hass.async_add_executor_job(publish_payload, payload)
+        _LOGGER.debug("Sent logbook event %s", event.data.get("entity_id"))
 
-        _LOGGER.info("Sent event %s", event.data.get("entity_id"))
+    # Register listeners and store unsub handles for cleanup
+    unsub_state = hass.bus.async_listen(EVENT_STATE_CHANGED, kdbtick_event_listener)
+    unsub_logbook = hass.bus.async_listen(EVENT_LOGBOOK_ENTRY, logbook_entry_listener)
 
-    hass.bus.async_listen(EVENT_LOGBOOK_ENTRY, logbook_entry_listener)
-    hass.bus.async_listen(EVENT_STATE_CHANGED, kdbtick_event_listener)
-    hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, shutdown)
+    def shutdown(event):
+        """Shut down the connection."""
+        _LOGGER.info("KDB-X Tick shutting down")
+        conn.close()
+
+    unsub_stop = hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, shutdown)
+
+    # Store references for unload
+    hass.data.setdefault(DOMAIN, {})
+    hass.data[DOMAIN][entry.entry_id] = {
+        "conn": conn,
+        "unsub": [unsub_state, unsub_logbook, unsub_stop],
+    }
+
+    # Reload listeners when options change
+    entry.async_on_unload(entry.add_update_listener(_async_update_listener))
+
+    return True
+
+
+async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry):
+    """Reload integration when options change."""
+    await hass.config_entries.async_reload(entry.entry_id)
+
+
+async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Unload a config entry."""
+    data = hass.data[DOMAIN].pop(entry.entry_id, None)
+    if data:
+        for unsub in data["unsub"]:
+            unsub()
+        data["conn"].close()
 
     return True

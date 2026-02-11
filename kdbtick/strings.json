@@ -1,0 +1,34 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to KDB-X Tick",
+        "description": "Enter connection details for your KDB-X tickerplant",
+        "data": {
+          "host": "Host",
+          "port": "Port",
+          "name": "Table Name",
+          "updF": "Update Function"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to KDB-X instance",
+      "unknown": "Unexpected error occurred"
+    },
+    "abort": {
+      "already_configured": "This KDB-X instance is already configured"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "KDB-X Tick Options",
+        "data": {
+          "include_entities": "Entities to include",
+          "exclude_entities": "Entities to exclude"
+        }
+      }
+    }
+  }
+}
