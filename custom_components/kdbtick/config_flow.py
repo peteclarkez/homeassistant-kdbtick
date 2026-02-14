@@ -23,6 +23,7 @@ DEFAULT_FUNC = ".u.updjson"
 
 CONF_INCLUDE_ENTITIES = "include_entities"
 CONF_EXCLUDE_ENTITIES = "exclude_entities"
+CONF_DEBUG = "debug"
 
 
 class KdbtickConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -101,6 +102,10 @@ class KdbtickOptionsFlow(config_entries.OptionsFlow):
                     ): selector.EntitySelector(
                         selector.EntitySelectorConfig(multiple=True)
                     ),
+                    vol.Optional(
+                        CONF_DEBUG,
+                        default=current.get(CONF_DEBUG, False),
+                    ): bool,
                 }
             ),
         )

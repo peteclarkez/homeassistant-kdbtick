@@ -19,34 +19,33 @@ This component allows Home Assistant to publish state change events to a [KDB-X 
 
 ## Configuration
 
-Add the following to your `configuration.yaml`:
-
-```yaml
-kdbtick:
-  host: '192.168.0.100'  # KDB-X tickerplant host
-  port: 5010             # Tickerplant port (default: 5010)
-  name: 'hass_event'     # Table name (default: hass_event)
-  filter:                # Optional: filter which entities to publish
-    include_domains:
-      - sensor
-      - binary_sensor
-    exclude_entities:
-      - sensor.some_noisy_sensor
-```
-
-### Configuration Options
+1. Go to **Settings** → **Devices & Services**
+2. Click **Add Integration** and search for **KDB-X Tick**
+3. Enter your connection details:
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `host` | `localhost` | KDB-X tickerplant hostname or IP |
-| `port` | `5010` | Tickerplant port |
-| `name` | `hass_event` | Target table name |
-| `updF` | `.u.updjson` | Update function to call |
-| `filter` | `{}` | Entity filter (include/exclude domains/entities) |
+| Host | `localhost` | KDB-X tickerplant hostname or IP |
+| Port | `5010` | Tickerplant port |
+| Table Name | `hass_event` | Target table name |
+| Update Function | `.u.updjson` | KDB-X function to call |
 
-## Data Format
+### Options
 
-Events are published as JSON to the `.u.updjson` function with the following structure:
+After setup, click **Configure** on the integration to access additional options:
+
+- **Include entities** — only publish events for these entities (empty = all)
+- **Exclude entities** — exclude specific entities from publishing
+- **Enable debug logging** — toggle verbose logging for troubleshooting
+
+## Events
+
+The integration listens for two event types:
+
+- **State changes** — published whenever an entity's state changes, including the numeric value, string value, and all attributes
+- **Logbook entries** — published as events with domain `event`
+
+### State Change Payload
 
 ```json
 {
@@ -61,6 +60,12 @@ Events are published as JSON to the `.u.updjson` function with the following str
   }
 }
 ```
+
+### Connection Handling
+
+- If the connection fails on startup, the integration retries every 60 seconds
+- If a send fails mid-operation, the connection is automatically re-established on the next event
+- A startup event is sent when the connection is first established
 
 ## KDB-X Server
 
@@ -82,10 +87,10 @@ h:hopen `:192.168.0.100:5013
 h "select from hass_event where time>.z.p-01:00:00"
 
 / Get temperature history
-h "select time, nvalue from hass_event where entity_id=`temperature"
+h "select time, evalue from hass_event where entity_id=`temperature"
 
-/ Get all sensor domains
-h "select distinct sym from hass_event"
+/ Get all entity domains
+h "select distinct edomain from hass_event"
 ```
 
 ## Troubleshooting
@@ -98,24 +103,28 @@ If the component fails to connect, it will retry every 60 seconds. Check:
 2. The host/port are correct
 3. There's no firewall blocking the connection
 
-### Check Logs
+### Enable Debug Logging
 
-Enable debug logging in `configuration.yaml`:
-
-```yaml
-logger:
-  default: info
-  logs:
-    custom_components.kdbtick: debug
-```
+1. Go to **Settings** → **Devices & Services** → **KDB-X Tick**
+2. Click **Configure**
+3. Enable the **Debug logging** toggle
+4. Click **Submit**
 
 ## Changelog
+
+### v5.0.0
+- UI-based configuration via config flow (replaces `configuration.yaml`)
+- HACS support
+- Entity include/exclude filtering via options UI
+- Debug logging toggle in options UI
+- Pure Python KDB+ IPC client (no external dependencies)
+- Logbook entry forwarding
+- Automatic reconnection with 60-second retry
 
 ### v2.0.0
 - Migrated from qpython to PyKX
 - Updated default port to 5010 (standard tickerplant port)
 - Improved connection handling with automatic reconnection
-- Cleaner code structure with KdbConnection class
 
 ### v1.0.0
 - Initial release using qpython

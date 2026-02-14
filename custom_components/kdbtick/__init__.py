@@ -2,6 +2,7 @@
 
 import json
 import logging
+from pathlib import Path
 import time
 
 from .kx.c import c as kdb
@@ -25,6 +26,7 @@ DOMAIN = "kdbtick"
 CONF_FUNC = "updF"
 CONF_INCLUDE_ENTITIES = "include_entities"
 CONF_EXCLUDE_ENTITIES = "exclude_entities"
+CONF_DEBUG = "debug"
 
 DEFAULT_HOST = "localhost"
 DEFAULT_PORT = 5010
@@ -32,6 +34,9 @@ DEFAULT_NAME = "hass_event"
 DEFAULT_FUNC = ".u.updjson"
 
 RETRY_INTERVAL = 60  # seconds
+
+_MANIFEST = json.loads((Path(__file__).parent / "manifest.json").read_text())
+VERSION = _MANIFEST["version"]
 
 
 class KdbConnection:
@@ -100,6 +105,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     name = entry.data.get(CONF_NAME, DEFAULT_NAME)
     updf = entry.data.get(CONF_FUNC, DEFAULT_FUNC)
 
+    # Set debug logging if enabled
+    debug = entry.options.get(CONF_DEBUG, False)
+    _LOGGER.setLevel(logging.DEBUG if debug else logging.WARNING)
+
     # Build entity filter from options
     include = set(entry.options.get(CONF_INCLUDE_ENTITIES, []))
     exclude = set(entry.options.get(CONF_EXCLUDE_ENTITIES, []))
@@ -135,7 +144,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             "entity_id": "kdb.connect",
             "attributes": {
                 "integration": "kdbtick",
-                "version": "2.0.0",
+                "version": VERSION,
                 "using": "kx",
             },
             "value": -1.1,

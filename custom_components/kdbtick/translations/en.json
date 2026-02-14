@@ -26,7 +26,8 @@
         "title": "KDB-X Tick Options",
         "data": {
           "include_entities": "Entities to include",
-          "exclude_entities": "Entities to exclude"
+          "exclude_entities": "Entities to exclude",
+          "debug": "Enable debug logging"
         }
       }
     }
