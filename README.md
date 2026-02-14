@@ -4,18 +4,18 @@ This component allows Home Assistant to publish state change events to a [KDB-X 
 
 ## Installation
 
-Copy the following files to your Home Assistant custom_components directory:
+### HACS (Recommended)
 
-```
-<config directory>/custom_components/kdbtick/__init__.py
-<config directory>/custom_components/kdbtick/manifest.json
-```
+1. Open HACS in your Home Assistant instance
+2. Click the three dots in the top right corner and select **Custom repositories**
+3. Add `https://github.com/peteclarkez/homeassistant-kdbtick` with category **Integration**
+4. Click **Install**
+5. Restart Home Assistant
 
-## Requirements
+### Manual
 
-This component uses [PyKX](https://code.kx.com/pykx/) for connecting to KDB-X. PyKX is the official Python interface maintained by KX Systems.
-
-The component will automatically install `pykx>=2.0.0` when loaded.
+1. Copy the `custom_components/kdbtick` directory to your Home Assistant `<config>/custom_components/` directory
+2. Restart Home Assistant
 
 ## Configuration
 
