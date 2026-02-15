@@ -3,6 +3,7 @@
 import json
 import logging
 from pathlib import Path
+import threading
 import time
 
 from .kx.c import c as kdb
@@ -47,22 +48,29 @@ class KdbConnection:
         self.host = host
         self.port = port
         self._conn = None
+        self._lock = threading.Lock()
 
     def is_connected(self) -> bool:
-        """Check if connection is active."""
+        """Check if connection is active. Caller must hold _lock."""
         if self._conn is None:
             return False
         try:
             self._conn.k("1+1")
             return True
         except Exception:
+            self._close_unlocked()
             return False
 
     def connect(self) -> bool:
         """Establish connection to KDB-X."""
+        with self._lock:
+            return self._connect_unlocked()
+
+    def _connect_unlocked(self) -> bool:
+        """Establish connection to KDB-X. Caller must hold _lock."""
         try:
             if self._conn is not None:
-                self.close()
+                self._close_unlocked()
             self._conn = kdb(self.host, self.port)
             _LOGGER.info("Connected to KDB-X at %s:%d", self.host, self.port)
             return True
@@ -73,6 +81,11 @@ class KdbConnection:
 
     def close(self):
         """Close the connection."""
+        with self._lock:
+            self._close_unlocked()
+
+    def _close_unlocked(self):
+        """Close the connection. Caller must hold _lock."""
         if self._conn is not None:
             try:
                 self._conn.close()
@@ -82,18 +95,18 @@ class KdbConnection:
 
     def send(self, func: str, table_name: str, payload: str) -> bool:
         """Send data to KDB-X using the specified function."""
-        if not self.is_connected():
-            if not self.connect():
-                return False
+        with self._lock:
+            if not self.is_connected():
+                if not self._connect_unlocked():
+                    return False
 
-        try:
-            # table_name as str → symbol (-11), payload wrapped as CharVector → char vector (10)
-            self._conn.k(func, table_name, kdb.CharVector(payload))
-            return True
-        except Exception as err:
-            _LOGGER.error("Failed to send to KDB-X: %s", err)
-            self._conn = None
-            return False
+            try:
+                self._conn.k(func, table_name, kdb.CharVector(payload))
+                return True
+            except Exception as err:
+                _LOGGER.error("Failed to send to KDB-X: %s", err)
+                self._close_unlocked()
+                return False
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
