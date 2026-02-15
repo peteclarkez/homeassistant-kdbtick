@@ -1,0 +1,12 @@
+{
+  "domain": "kdbtick",
+  "name": "KDB-X Tick",
+  "documentation": "https://github.com/peteclarkez/homeassistant-kdbtick",
+  "issue_tracker": "https://github.com/peteclarkez/homeassistant-kdbtick/issues",
+  "requirements": [],
+  "codeowners": [
+    "@peteclarkez"
+  ],
+  "version": "5.0.4",
+  "config_flow": true
+}
