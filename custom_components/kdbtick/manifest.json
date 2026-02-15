@@ -7,6 +7,6 @@
   "codeowners": [
     "@peteclarkez"
   ],
-  "version": "5.0.4",
+  "version": "5.0.6",
   "config_flow": true
 }
